@@ -1,6 +1,9 @@
-void writeSerial0(uint8_t* buf, int nchar);
+//Serial Data Logger by Jack Christensen is licensed under CC BY-SA 4.0,
+//http://creativecommons.org/licenses/by-sa/4.0/
 
-const int BUFSIZE = 128;            //serial receive buffer size
+//buffer class
+
+const uint16_t BUFSIZE = 256;            //serial receive buffer size
 
 class buffer
 {
@@ -8,13 +11,13 @@ class buffer
         buffer(void);
         void init(void);
         void assignLEDs(int8_t writeLED, int8_t overrunLED);
-        void write(bool flush = false);
+        int write(SdFile* f, bool flush = false);
         uint8_t buf[BUFSIZE];
         uint8_t* p;
         uint16_t nchar;
         bool writeFlag;
         static bool ovrFlag;
-        
+
     private:
         static int8_t _writeLED;
         static int8_t _overrunLED;
@@ -36,7 +39,7 @@ void buffer::init(void)
     p = buf;                //point at the first byte
     nchar = 0;              //buffer is empty
     writeFlag = false;      //does not need to be written to SD
-    ovrFlag = false;
+    ovrFlag = false;        //no overruns
 }
 
 void buffer::assignLEDs(int8_t writeLED, int8_t overrunLED)
@@ -49,22 +52,35 @@ void buffer::assignLEDs(int8_t writeLED, int8_t overrunLED)
 
 //if the flush flag is set, write the buffer to SD if it is not empty
 //else write it only if the writeFlag is set
-void buffer::write(bool flush)
+int buffer::write(SdFile* f, bool flush)
 {
-    if ( (flush & nchar > 0) || writeFlag ) {
+    int ret = 0;
+
+    if ( (flush & (nchar > 0)) || writeFlag ) {
         if (_writeLED >= 0 ) digitalWrite(_writeLED, HIGH);
         writeFlag = false;             //reset the flag
-        writeSerial0(buf, nchar);
+        ret = f -> write(buf, nchar);
         nchar = 0;                     //the buffer is empty/available again
         if (_writeLED >= 0 ) digitalWrite(_writeLED, LOW);
     }
     digitalWrite(_overrunLED, ovrFlag);
+    return ret;
 }
 
-void writeSerial0(uint8_t* buf, int nchar)
+//poor man's Serial.println() substitute
+void writeUSART0(char* buf)
 {
-    for (int i = 0; i < nchar; i++) {
+    char c;
+
+    uint8_t ucsr0b = UCSR0B;
+
+    while ( (c = *buf++) != 0 ) {
         loop_until_bit_is_set(UCSR0A, UDRE0);
-        UDR0 = buf[i];
+        UDR0 = c;
     }
+    loop_until_bit_is_set(UCSR0A, UDRE0);
+    UDR0 = '\r';
+    loop_until_bit_is_set(UCSR0A, UDRE0);
+    UDR0 = '\n';
+    UCSR0B = ucsr0b;
 }

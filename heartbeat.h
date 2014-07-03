@@ -1,6 +1,9 @@
+//Serial Data Logger by Jack Christensen is licensed under CC BY-SA 4.0,
+//http://creativecommons.org/licenses/by-sa/4.0/
+
 //heartbeat LED with various blink modes
 
-enum blinkMode_t { BLINK_IDLE, BLINK_RUN };
+enum blinkMode_t { BLINK_IDLE, BLINK_RUN, BLINK_ERROR, BLINK_NO_CARD };
 
 class heartbeat
 {
@@ -9,7 +12,7 @@ class heartbeat
         void begin(blinkMode_t m);
         void run(void);
         void mode(blinkMode_t m);
-        
+
     private:
         uint8_t _pin;
         uint32_t _msOn;
@@ -51,14 +54,23 @@ void heartbeat::mode(blinkMode_t m)
         _msOn = 50;
         _msOff = 950;
         break;
-        
+
     case BLINK_RUN:
         _msOn = 500;
         _msOff = 500;
         break;
+
+    case BLINK_ERROR:
+        _msOn = 100;
+        _msOff = 100;
+        break;
+
+    case BLINK_NO_CARD:
+        _msOn = 2000;
+        _msOff = 2000;
+        break;
     }
     _state = false;
     _msLastChange = 0;
-    run();        
+    run();
 }
-
