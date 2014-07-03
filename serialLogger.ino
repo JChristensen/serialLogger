@@ -72,7 +72,7 @@ void setup(void)
     buf[0].assignLEDs(SD_LED, OVR_LED);
     hbLED.begin(BLINK_IDLE);
 
-    if ( !digitalRead(CARD_DETECT) ) {
+    if ( digitalRead(CARD_DETECT) ) {
         STATE = ERROR;
         hbLED.mode(BLINK_NO_CARD);
     }
