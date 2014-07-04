@@ -180,6 +180,7 @@ bool openFile(void)
 ISR(USART_RX_vect)
 {
     static bool overrun;
+    static uint16_t lost;                          //number of lost characters due to overrun
     static uint8_t bufIdx;                         //index to the current buffer
     buffer* bp = &buf[bufIdx];                     //pointer to current buffer
     uint8_t c = UDR0;                              //get the received character
@@ -199,6 +200,10 @@ ISR(USART_RX_vect)
     }
     else if ( bp -> nchar == 0 ) {                 //has previous overrun cleared?
         overrun = false;
+        lost = 0;
         *(bp -> p++) = c;                          //put the character into the buffer
+    }
+    else {
+        ++lost;                                    //count lost characters
     }
 }
