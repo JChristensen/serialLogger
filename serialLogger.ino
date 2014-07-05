@@ -47,17 +47,15 @@ const uint8_t BAUD_RATE_1 = A3;
 const uint8_t BAUD_RATE_2 = A4;
 const uint8_t BAUD_RATE_3 = A5;
 
-const int NBUF = 2;                  //number of receive buffers
-buffer buf[NBUF];                    //the buffers
+bufferPool bp;
+SdFat sd;
+SdFile logFile;
 heartbeat hbLED(HB_LED);
 
 const bool PULLUP = true;
 const bool INVERT = true;
 const unsigned long DEBOUNCE_MS = 25;
 Button btn(BUTTON_PIN, PULLUP, INVERT, DEBOUNCE_MS);
-
-SdFat sd;
-SdFile logFile;
 
 enum STATES_t { IDLE, LOGGING, STOP, ERROR } STATE;
 
@@ -69,7 +67,7 @@ void setup(void)
     pinMode(BAUD_RATE_1, INPUT_PULLUP);
     pinMode(BAUD_RATE_2, INPUT_PULLUP);
     pinMode(BAUD_RATE_3, INPUT_PULLUP);
-    buf[0].assignLEDs(SD_LED, OVR_LED);
+//    buf[0].assignLEDs(SD_LED, OVR_LED);
     hbLED.begin(BLINK_IDLE);
 
     if ( digitalRead(CARD_DETECT) ) {
@@ -101,9 +99,6 @@ void setup(void)
 
 void loop(void)
 {
-    static uint8_t bufIdx;            //index to the current buffer
-    buffer* bp;                       //buffer pointer
-
     btn.read();
     hbLED.run();
 
@@ -121,7 +116,7 @@ void loop(void)
                 STATE = LOGGING;
                 hbLED.mode(BLINK_RUN);
                 for (int i = 0; i < NBUF; i++) {
-                    buf[i].init();                    //clear the buffers
+//                    buf[i].init();                    //clear the buffers
                 }
                 UCSR0B = _BV(RXCIE0) | _BV(RXEN0) | _BV(TXEN0);    //enable rx, tx & rx complete interrupt
             }
@@ -135,22 +130,22 @@ void loop(void)
             STATE = STOP;
         }
         else {                                    //watch for buffers that need to be written
-            bp = &buf[bufIdx];                    //point to buffer
-            stat = bp -> write(&logFile);         //write buffer if needed
-            if ( ++bufIdx >= NBUF ) bufIdx = 0;   //increment index to next buffer
-            if (stat < 0) STATE = ERROR;
+//            bp = &buf[bufIdx];                    //point to buffer
+//            stat = bp -> write(&logFile);         //write buffer if needed
+//            if ( ++bufIdx >= NBUF ) bufIdx = 0;   //increment index to next buffer
+//            if (stat < 0) STATE = ERROR;          //SD error
         }
         break;
 
     case STOP:                                    //stop logging, flush buffers, etc.
         STATE = IDLE;
-        bp -> ovrFlag = false;
+//        bp -> ovrFlag = false;
         hbLED.mode(BLINK_IDLE);
         for (int i = 0; i < NBUF; i++) {
-            bp = &buf[bufIdx];                    //point to buffer
-            stat = bp -> write(&logFile, true);   //flush any characters in the buffer
-            if ( ++bufIdx >= NBUF ) bufIdx = 0;   //increment index to next buffer
-            if (stat < 0) STATE = ERROR;
+//            bp = &buf[bufIdx];                    //point to buffer
+//            stat = bp -> write(&logFile, true);   //flush any characters in the buffer
+//            if ( ++bufIdx >= NBUF ) bufIdx = 0;   //increment index to next buffer
+//            if (stat < 0) STATE = ERROR;
         }
         logFile.sync();
         logFile.close();
@@ -181,12 +176,10 @@ ISR(USART_RX_vect)
 {
     static bool overrun;
     static uint16_t lost;                          //number of lost characters due to overrun
-    static uint8_t bufIdx;                         //index to the current buffer
-    buffer* bp = &buf[bufIdx];                     //pointer to current buffer
     uint8_t c = UDR0;                              //get the received character
 
-    if ( !overrun ) {
-        *(bp -> p++) = c;                          //put the character into the buffer
+    if ( !bp.overrun ) {
+        bp.putc(c);                                //put the character into the buffer
         if ( ++(bp -> nchar) >= BUFSIZE ) {        //buffer full?
             bp -> writeFlag = true;                //yes, set writeFlag for mainline code
             if ( ++bufIdx >= NBUF ) bufIdx = 0;    //increment index to next buffer
