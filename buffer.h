@@ -203,7 +203,7 @@ int bufferPool::flush(SdFile* f)
 
     for (uint8_t i = 0; i < NBUF; i++ ) {
         writeBuf = &buf[writeIdx];                                //point to the buffer
-        sdStat = writeBuf -> write(f);                            //write the buffer to SD
+        sdStat = writeBuf -> flush(f);                            //write the buffer to SD
         if (sdStat < 0) break;
         if ( ++writeIdx >= NBUF ) writeIdx = 0;                   //increment index to next buffer
     }
