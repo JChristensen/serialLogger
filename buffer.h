@@ -9,7 +9,7 @@ class buffer
 {
     public:
         buffer(void);
-        void init(void);
+        void init(int8_t writeLED = -1);
         int putch(uint8_t ch);
         int write(SdFile* f);
         int flush(SdFile* f);
@@ -18,7 +18,16 @@ class buffer
         uint8_t* next;                  //pointer to next available position in buffer
         uint16_t nchar;                 //number of characters in the buffer
         bool writeFlag;                 //buffer is full and needs to be written
+
+    private:
+        static int8_t _writeLED;
+        static uint8_t _ledMask;
+        static volatile uint8_t* _ledReg;
 };
+
+int8_t buffer::_writeLED;
+uint8_t buffer::_ledMask;
+volatile uint8_t* buffer::_ledReg;
 
 //constructor
 buffer::buffer(void)
@@ -27,11 +36,20 @@ buffer::buffer(void)
 }
 
 //initialize the buffer
-void buffer::init(void)
+void buffer::init(int8_t writeLED)
 {
     nchar = 0;                          //buffer is empty
     next = buf;                         //point at the first byte
     writeFlag = false;                  //does not need to be written
+
+    _writeLED = writeLED;
+    if (_writeLED >= 0) {
+        pinMode(_writeLED, OUTPUT);
+        _ledMask = digitalPinToBitMask(_writeLED);    //save some cycles
+        uint8_t port = digitalPinToPort(_writeLED);
+        _ledReg = portOutputRegister(port);
+        *_ledReg &= ~_ledMask;
+    }
 }
 
 //put a character into the buffer (Context: ISR)
@@ -56,7 +74,9 @@ int buffer::write(SdFile* f)
 
     if ( writeFlag ) {
         writeFlag = false;
+        *_ledReg |= _ledMask;
         sdStat = f -> write(buf, nchar);        //write the buffer to SD
+        *_ledReg &= ~_ledMask;
         if (sdStat >= 0) nchar = 0;             //the buffer is empty/available again
     }
     return sdStat;
@@ -70,7 +90,9 @@ int buffer::flush(SdFile* f)
 
     if ( nchar > 0 ) {
         writeFlag = false;
+        *_ledReg |= _ledMask;
         sdStat = f -> write(buf, nchar);        //write the buffer to SD
+        *_ledReg &= ~_ledMask;
         if (sdStat >= 0) nchar = 0;             //the buffer is empty/available again
     }
     return sdStat;
@@ -79,7 +101,7 @@ int buffer::flush(SdFile* f)
 class bufferPool
 {
     public:
-        bufferPool(uint8_t writeLED = -1);
+        bufferPool(int8_t writeLED = -1);
         void init(void);
         int putch(uint8_t ch);
         int write(SdFile* f);
@@ -90,15 +112,15 @@ class bufferPool
         uint16_t lost;
         
     private:
-        int8_t _writeLED;
         buffer* curBuf;                     //pointer to current buffer
         uint8_t bufIdx;                     //index to the current buffer
         buffer* writeBuf;                   //pointer to buffer to write
         uint8_t writeIdx;                   //index to the buffer to write
+        int8_t _writeLED;
 };
 
 //constructor
-bufferPool::bufferPool(uint8_t writeLED)
+bufferPool::bufferPool(int8_t writeLED)
 {
     _writeLED = writeLED;
 }
@@ -106,17 +128,13 @@ bufferPool::bufferPool(uint8_t writeLED)
 void bufferPool::init(void)
 {
     for (uint8_t i = 0; i < NBUF; i++) {        //initialize the buffers
-        buf[i].init();
+        buf[i].init(_writeLED);
     }
     bufIdx = 0;
     writeIdx = 0;
     curBuf = &buf[bufIdx];
     overrun = false;    
     lost = 0;
-    if (_writeLED >= 0) {
-        pinMode(_writeLED, OUTPUT);
-        digitalWrite(_writeLED, LOW);
-    }
 }
 
 //put a character into a buffer (Context: ISR)
@@ -170,9 +188,7 @@ int bufferPool::write(SdFile* f)
 {
     int sdStat = 0;
     writeBuf = &buf[writeIdx];                                //point to the buffer
-    if (_writeLED >= 0 ) digitalWrite(_writeLED, HIGH);
     sdStat = writeBuf -> write(f);                            //write the buffer to SD
-    if (_writeLED >= 0 ) digitalWrite(_writeLED, LOW);
     if ( ++writeIdx >= NBUF ) writeIdx = 0;                   //increment index to next buffer
     return sdStat;
 }
@@ -186,10 +202,8 @@ int bufferPool::flush(SdFile* f)
     if ( writeIdx >= NBUF ) writeIdx = 0;
 
     for (uint8_t i = 0; i < NBUF; i++ ) {
-        if (_writeLED >= 0 ) digitalWrite(_writeLED, HIGH);
         writeBuf = &buf[writeIdx];                                //point to the buffer
         sdStat = writeBuf -> write(f);                            //write the buffer to SD
-        if (_writeLED >= 0 ) digitalWrite(_writeLED, LOW);
         if (sdStat < 0) break;
         if ( ++writeIdx >= NBUF ) writeIdx = 0;                   //increment index to next buffer
     }
