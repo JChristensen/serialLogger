@@ -10,8 +10,9 @@ class buffer
     public:
         buffer(void);
         void init(void);
-        int putch(uint8_t c);
-        int write(SdFile* f, bool flush = false);
+        int putch(uint8_t ch);
+        int write(SdFile* f);
+        int flush(SdFile* f);
 
         uint8_t buf[BUFSIZE];           //the buffer
         uint8_t* next;                  //pointer to next available position in buffer
@@ -28,44 +29,72 @@ buffer::buffer(void)
 //initialize the buffer
 void buffer::init(void)
 {
-    next = buf;                         //point at the first byte
     nchar = 0;                          //buffer is empty
+    next = buf;                         //point at the first byte
     writeFlag = false;                  //does not need to be written
 }
 
-int buffer::putch(uint8_t c)
+//put a character into the buffer (Context: ISR)
+//returns -1 if the character filled the buffer,
+//else returns the character.
+int buffer::putch(uint8_t ch)
 {
-}
-
-//write the buffer if full (i.e. writeFlag is set),
-//or if the flush flag is set, and the buffer is not empty.
-//passes the return code from SdFile.write() back to the caller.
-int buffer::write(SdFile* f, bool flush)
-{
-    int ret = 0;
-
-    if ( (flush & (nchar > 0)) || writeFlag ) {
-        writeFlag = false;             //reset the flag
-        ret = f -> write(buf, nchar);
-        nchar = 0;                     //the buffer is empty/available again
+    *next++ = ch;                       //put the character in the next available location
+    if ( ++nchar >= BUFSIZE ) {
+        writeFlag = true;
+        return -1;
     }
-    return ret;
+    else {
+        return ch;
+    }
+}
+//write the buffer if it's full (i.e. writeFlag is set),
+//passes the return code from SdFile.write() back to the caller.
+int buffer::write(SdFile* f)
+{
+    int sdStat = 0;
+
+    if ( writeFlag ) {
+        writeFlag = false;
+        sdStat = f -> write(buf, nchar);        //write the buffer to SD
+        if (sdStat >= 0) nchar = 0;             //the buffer is empty/available again
+    }
+    return sdStat;
 }
 
+//write the buffer if it contains data
+//passes the return code from SdFile.write() back to the caller.
+int buffer::flush(SdFile* f)
+{
+    int sdStat = 0;
+
+    if ( nchar > 0 ) {
+        writeFlag = false;
+        sdStat = f -> write(buf, nchar);        //write the buffer to SD
+        if (sdStat >= 0) nchar = 0;             //the buffer is empty/available again
+    }
+    return sdStat;
+}
 /*-------- bufferPool class --------*/
 class bufferPool
 {
     public:
         bufferPool(uint8_t writeLED = -1);
-        void begin(void);
-        int putch(uint8_t c);
-        int write(SdFile* f, bool flush = false);
+        void init(void);
+        int putch(uint8_t ch);
+        int write(SdFile* f);
+        int flush(SdFile* f);
 
         buffer buf[NBUF];
         bool overrun;
+        uint16_t lost;
         
     private:
         int8_t _writeLED;
+        buffer* curBuf;                     //pointer to current buffer
+        uint8_t bufIdx;                     //index to the current buffer
+        buffer* writeBuf;                   //pointer to buffer to write
+        uint8_t writeIdx;                   //index to the buffer to write
 };
 
 //constructor
@@ -74,19 +103,97 @@ bufferPool::bufferPool(uint8_t writeLED)
     _writeLED = writeLED;
 }
 
-void bufferPool::begin(void)
+void bufferPool::init(void)
 {
-    if (_writeLED >= 0) pinMode(_writeLED, OUTPUT);
+    for (uint8_t i = 0; i < NBUF; i++) {        //initialize the buffers
+        buf[i].init();
+    }
+    bufIdx = 0;
+    writeIdx = 0;
+    curBuf = &buf[bufIdx];
     overrun = false;    
+    lost = 0;
+    if (_writeLED >= 0) {
+        pinMode(_writeLED, OUTPUT);
+        digitalWrite(_writeLED, LOW);
+    }
 }
 
-int bufferPool::putch(uint8_t c)
+//put a character into a buffer (Context: ISR)
+//if the character filled the buffer, but if the next buffer was not
+//yet written and cleared by the mainline code, returns -1,
+//else returns the character.
+int bufferPool::putch(uint8_t ch)
 {
+    uint8_t ret = ch;
+
+    if ( !overrun ) {                               //room for the character?
+        if ( curBuf -> putch(ch) < 0 ) {            //yes, did the character fill the buffer?
+            if ( ++bufIdx >= NBUF ) bufIdx = 0;     //yes, switch buffers
+            curBuf = &buf[bufIdx];                  //point to the next buffer
+            curBuf -> next = curBuf -> buf;         //the next character goes in the first location
+            if ( curBuf -> nchar != 0 ) {           //if mainline code has not zeroed the character count,
+                overrun = true;                     //then we have an overrun situation
+                ret = -1;
+            }
+        }
+    }
+    else if ( curBuf -> nchar == 0 ) {              //has previous overrun cleared?
+        overrun = false;
+        curBuf -> putch('<');                       //insert a message
+        curBuf -> putch('L');
+        curBuf -> putch('O');
+        curBuf -> putch('S');
+        curBuf -> putch('T');
+        curBuf -> putch(' ');
+        for (uint8_t i = 0; i < 4; i++) {           //convert count of lost chars to hex
+            uint16_t n = ( lost & 0xF000 ) >> 12;
+            n = n + ( (n > 9) ? 'A' - 10 : '0' );
+            curBuf -> putch(n);
+            lost <<= 4;
+        }
+        curBuf -> putch('>');
+        curBuf -> putch(ch);                        //yes, put the character into the buffer
+        lost = 0;
+    }
+    else {
+        ++lost;                                     //no, this character was lost
+        ret = -1;                                   //still have overrun situation
+    }
+    return ret;
 }
-int bufferPool::write(SdFile* f, bool flush)
+
+//write a buffer if it's full.
+//moves to the next buffer on each call.
+//passes the return code from SdFile.write() back to the caller.
+int bufferPool::write(SdFile* f)
 {
+    int sdStat = 0;
+    writeBuf = &buf[writeIdx];                                //point to the buffer
     if (_writeLED >= 0 ) digitalWrite(_writeLED, HIGH);
+    sdStat = writeBuf -> write(f);                            //write the buffer to SD
     if (_writeLED >= 0 ) digitalWrite(_writeLED, LOW);
+    if ( ++writeIdx >= NBUF ) writeIdx = 0;                   //increment index to next buffer
+    return sdStat;
+}
+
+//starting with the oldest buffer, write any that contain data.
+//passes the return code from SdFile.write() back to the caller.
+int bufferPool::flush(SdFile* f)
+{
+    int sdStat = 0;
+    writeIdx = ++bufIdx;                                          //index to oldest buffer
+    if ( writeIdx >= NBUF ) writeIdx = 0;
+
+    for (uint8_t i = 0; i < NBUF; i++ ) {
+        if (_writeLED >= 0 ) digitalWrite(_writeLED, HIGH);
+        writeBuf = &buf[writeIdx];                                //point to the buffer
+        sdStat = writeBuf -> write(f);                            //write the buffer to SD
+        if (_writeLED >= 0 ) digitalWrite(_writeLED, LOW);
+        if (sdStat < 0) break;
+        if ( ++writeIdx >= NBUF ) writeIdx = 0;                   //increment index to next buffer
+    }
+    return sdStat;
 }
 
 /*
