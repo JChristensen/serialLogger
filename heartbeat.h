@@ -15,6 +15,8 @@ class heartbeat
 
     private:
         uint8_t _pin;
+        uint8_t _ledMask;
+        volatile uint8_t* _ledReg;
         uint32_t _msOn;
         uint32_t _msOff;
         uint32_t _interval;
@@ -26,13 +28,17 @@ class heartbeat
 heartbeat::heartbeat(uint8_t pin)
 {
     _pin = pin;
+    _ledMask = digitalPinToBitMask(_pin);    //save some cycles
+    uint8_t port = digitalPinToPort(_pin);
+    _ledReg = portOutputRegister(port);
 }
 
 //hardware init
 void heartbeat::begin(blinkMode_t m)
 {
     pinMode(_pin, OUTPUT);
-    digitalWrite(_pin, _state = false);
+    _state = false;
+    *_ledReg &= ~_ledMask;
     mode(m);
 }
 
@@ -41,7 +47,8 @@ void heartbeat::run()
     uint32_t ms = millis();
     if ( ms - _msLastChange >= _interval ) {
         _msLastChange = ms;
-        digitalWrite(_pin, _state = !_state);
+        if ( (_state = !_state) ) *_ledReg |= _ledMask;
+        else *_ledReg &= ~_ledMask;
         _interval = _state ? _msOn : _msOff;
     }
 }

@@ -2,7 +2,7 @@
 //http://creativecommons.org/licenses/by-sa/4.0/
 
 const int NBUF = 2;                     //number of receive buffers
-const uint16_t BUFSIZE = 256;           //serial receive buffer size
+const uint16_t BUFSIZE = 512;           //serial receive buffer size
 
 /*-------- buffer class --------*/
 class buffer
@@ -209,40 +209,6 @@ int bufferPool::flush(SdFile* f)
     }
     return sdStat;
 }
-
-/*
-//handle the incoming characters
-ISR(USART_RX_vect)
-{
-    static bool overrun;
-    static uint16_t lost;                          //number of lost characters due to overrun
-    static uint8_t bufIdx;                         //index to the current buffer
-    buffer* bp = &buf[bufIdx];                     //pointer to current buffer
-    uint8_t c = UDR0;                              //get the received character
-
-    if ( !overrun ) {
-        *(bp -> p++) = c;                          //put the character into the buffer
-        if ( ++(bp -> nchar) >= BUFSIZE ) {        //buffer full?
-            bp -> writeFlag = true;                //yes, set writeFlag for mainline code
-            if ( ++bufIdx >= NBUF ) bufIdx = 0;    //increment index to next buffer
-            bp = &buf[bufIdx];                     //point to next buffer
-            bp -> p = bp -> buf;                   //initialize the character pointer
-            if ( bp -> nchar != 0 ) {              //if mainline code has not zeroed the character count,
-                overrun = true;                    //then we have an overrun situation
-                bp -> ovrFlag = true;
-            }
-        }
-    }
-    else if ( bp -> nchar == 0 ) {                 //has previous overrun cleared?
-        overrun = false;
-        lost = 0;
-        *(bp -> p++) = c;                          //put the character into the buffer
-    }
-    else {
-        ++lost;                                    //count lost characters
-    }
-}
-*/
 
 //poor man's Serial.println() substitute
 void writeUSART0(char* buf)

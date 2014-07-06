@@ -33,8 +33,8 @@
 #include "buffer.h"
 #include "heartbeat.h"
 
-//BAUD RATE CODES (A5:A2)      0    1     2     3     4     5      6      7      8      9      10
-const uint32_t baudRates[] = { 300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200 };
+//BAUD RATE CODES (A5:A2)      0     1     2     3     4      5      6      7      8      9
+const uint32_t baudRates[] = { 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200 };
 
 //pin assignments
 const uint8_t SD_LED = 5;            //SD activity LED
@@ -74,7 +74,7 @@ void setup(void)
         STATE = ERROR;
         hbLED.mode(BLINK_NO_CARD);
     }
-    else if ( !sd.begin(SS, SPI_HALF_SPEED) ) {    //initialize SD card
+    else if ( !sd.begin(SS, SPI_FULL_SPEED) ) {    //initialize SD card
         STATE = ERROR;
         hbLED.mode(BLINK_ERROR);
     }
