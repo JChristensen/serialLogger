@@ -8,8 +8,8 @@
  *                                                                             *
  * Input baud rate is selected by grounding pins A5:A2 according to the        *
  * codes below. Leaving a pin open is a one (high), grounding a pin is         *
- * a zero (low). E.g. for 115200 ground A5 and A3, for 57600 ground A5 and     *
- * A2, for 9600 ground A5, A4, A2.                                             *
+ * a zero (low). E.g. for 115200 ground A4 and A3, for 57600 ground A4,        *
+ * A3 and A2, for 9600 ground A5 and A4.                                       *
  *                                                                             *
  * The heartbeat LED blinks in various patterns:                               *
  *   Short blink: Idle mode.                                                   *
