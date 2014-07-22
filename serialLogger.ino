@@ -120,13 +120,13 @@ void loop(void)
 
     case LOGGING:
         if (btn.wasReleased()) {                  //user wants to stop
-            UCSR0B = 0;                           //disable usart rx & rx complete interrupt
-            UCSR0B = _BV(TXEN0);                  //disable rx & rx complete interrupt
+            UCSR0B = _BV(TXEN0);                  //disable usart rx & rx complete interrupt, enable tx
             STATE = STOP;
         }
         else {                                    //watch for buffers that need to be written
             sdStat = bp.write(&logFile);          //write buffers if needed
             if (sdStat < 0) {
+                logFile.close();
                 STATE = ERROR;                    //SD error
                 hbLED.mode(BLINK_ERROR);
             }
@@ -138,11 +138,11 @@ void loop(void)
         STATE = IDLE;
         hbLED.mode(BLINK_IDLE);
         sdStat = bp.flush(&logFile);              //flush buffers if needed
+        logFile.close();
         if (sdStat < 0) {
             STATE = ERROR;                        //SD error
             hbLED.mode(BLINK_ERROR);
         }
-        logFile.close();
         bp.init();
         digitalWrite(OVR_LED, LOW);
         break;

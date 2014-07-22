@@ -1,6 +1,8 @@
 //Serial Data Logger by Jack Christensen is licensed under CC BY-SA 4.0,
 //http://creativecommons.org/licenses/by-sa/4.0/
 
+#include <util/atomic.h>
+
 const int NBUF = 2;                     //number of receive buffers
 const uint16_t BUFSIZE = 512;           //serial receive buffer size
 
@@ -14,10 +16,10 @@ class buffer
         int write(SdFile* f);
         int flush(SdFile* f);
 
-        uint8_t buf[BUFSIZE];           //the buffer
-        uint8_t* next;                  //pointer to next available position in buffer
-        uint16_t nchar;                 //number of characters in the buffer
-        bool writeFlag;                 //buffer is full and needs to be written
+        volatile uint8_t buf[BUFSIZE];  //the buffer
+        volatile uint8_t* next;         //pointer to next available position in buffer
+        volatile uint16_t nchar;        //number of characters in the buffer
+        volatile bool writeMe;          //buffer is full and needs to be written
 
     private:
         static int8_t _writeLED;
@@ -40,12 +42,12 @@ void buffer::init(int8_t writeLED)
 {
     nchar = 0;                          //buffer is empty
     next = buf;                         //point at the first byte
-    writeFlag = false;                  //does not need to be written
+    writeMe = false;                    //does not need to be written
 
     _writeLED = writeLED;
     if (_writeLED >= 0) {
         pinMode(_writeLED, OUTPUT);
-        _ledMask = digitalPinToBitMask(_writeLED);    //save some cycles
+        _ledMask = digitalPinToBitMask(_writeLED);    //save some cycles by addressing port directly
         uint8_t port = digitalPinToPort(_writeLED);
         _ledReg = portOutputRegister(port);
         *_ledReg &= ~_ledMask;
@@ -59,23 +61,23 @@ int buffer::putch(uint8_t ch)
 {
     *next++ = ch;                       //put the character in the next available location
     if ( ++nchar >= BUFSIZE ) {
-        writeFlag = true;
+        writeMe = true;
         return -1;
     }
     else {
         return ch;
     }
 }
-//write the buffer if it's full (i.e. writeFlag is set),
+//write the buffer if it's full (i.e. if writeMe is set),
 //passes the return code from SdFile.write() back to the caller.
 int buffer::write(SdFile* f)
 {
     int sdStat = 0;
 
-    if ( writeFlag ) {
-        writeFlag = false;
+    if ( writeMe ) {
+        writeMe = false;
         *_ledReg |= _ledMask;
-        sdStat = f -> write(buf, nchar);        //write the buffer to SD
+        sdStat = f -> write((const uint8_t *)buf, nchar);        //write the buffer to SD
         *_ledReg &= ~_ledMask;
         if (sdStat >= 0) nchar = 0;             //the buffer is empty/available again
     }
@@ -89,14 +91,15 @@ int buffer::flush(SdFile* f)
     int sdStat = 0;
 
     if ( nchar > 0 ) {
-        writeFlag = false;
+        writeMe = false;
         *_ledReg |= _ledMask;
-        sdStat = f -> write(buf, nchar);        //write the buffer to SD
+        sdStat = f -> write((const uint8_t *)buf, nchar);        //write the buffer to SD
         *_ledReg &= ~_ledMask;
         if (sdStat >= 0) nchar = 0;             //the buffer is empty/available again
     }
     return sdStat;
 }
+
 /*-------- bufferPool class --------*/
 class bufferPool
 {
@@ -108,15 +111,15 @@ class bufferPool
         int flush(SdFile* f);
 
         buffer buf[NBUF];
-        bool overrun;
-        uint16_t lost;
+        volatile bool overrun;
         
     private:
-        buffer* curBuf;                     //pointer to current buffer
-        uint8_t bufIdx;                     //index to the current buffer
-        buffer* writeBuf;                   //pointer to buffer to write
-        uint8_t writeIdx;                   //index to the buffer to write
+        buffer* _curBuf;                        //pointer to current buffer
+        volatile uint8_t _bufIdx;               //index to the current buffer
+        buffer* _writeBuf;                      //pointer to buffer to write
+        uint8_t _writeIdx;                      //index to the buffer to write
         int8_t _writeLED;
+        uint16_t _lost;
 };
 
 //constructor
@@ -130,11 +133,11 @@ void bufferPool::init(void)
     for (uint8_t i = 0; i < NBUF; i++) {        //initialize the buffers
         buf[i].init(_writeLED);
     }
-    bufIdx = 0;
-    writeIdx = 0;
-    curBuf = &buf[bufIdx];
+    _bufIdx = 0;
+    _writeIdx = 0;
+    _curBuf = &buf[_bufIdx];
+    _lost = 0;
     overrun = false;    
-    lost = 0;
 }
 
 //put a character into a buffer (Context: ISR)
@@ -146,36 +149,36 @@ int bufferPool::putch(uint8_t ch)
     uint8_t ret = ch;
 
     if ( !overrun ) {                               //room for the character?
-        if ( curBuf -> putch(ch) < 0 ) {            //yes, did the character fill the buffer?
-            if ( ++bufIdx >= NBUF ) bufIdx = 0;     //yes, switch buffers
-            curBuf = &buf[bufIdx];                  //point to the next buffer
-            curBuf -> next = curBuf -> buf;         //the next character goes in the first location
-            if ( curBuf -> nchar != 0 ) {           //if mainline code has not zeroed the character count,
+        if ( _curBuf -> putch(ch) < 0 ) {           //yes, did the character fill the buffer?
+            if ( ++_bufIdx >= NBUF ) _bufIdx = 0;   //yes, switch buffers
+            _curBuf = &buf[_bufIdx];                //point to the next buffer
+            _curBuf -> next = _curBuf -> buf;       //the next character goes in the first location
+            if ( _curBuf -> nchar != 0 ) {          //if mainline code has not zeroed the character count,
                 overrun = true;                     //then we have an overrun situation
                 ret = -1;
             }
         }
     }
-    else if ( curBuf -> nchar == 0 ) {              //has previous overrun cleared?
+    else if ( _curBuf -> nchar == 0 ) {             //has previous overrun cleared?
         overrun = false;
-        curBuf -> putch('<');                       //insert a message
-        curBuf -> putch('L');
-        curBuf -> putch('O');
-        curBuf -> putch('S');
-        curBuf -> putch('T');
-        curBuf -> putch(' ');
+        _curBuf -> putch('<');                      //insert a message
+        _curBuf -> putch('L');
+        _curBuf -> putch('O');
+        _curBuf -> putch('S');
+        _curBuf -> putch('T');
+        _curBuf -> putch(' ');
         for (uint8_t i = 0; i < 4; i++) {           //convert count of lost chars to hex
-            uint16_t n = ( lost & 0xF000 ) >> 12;
+            uint16_t n = ( _lost & 0xF000 ) >> 12;
             n = n + ( (n > 9) ? 'A' - 10 : '0' );
-            curBuf -> putch(n);
-            lost <<= 4;
+            _curBuf -> putch(n);
+            _lost <<= 4;
         }
-        curBuf -> putch('>');
-        curBuf -> putch(ch);                        //yes, put the character into the buffer
-        lost = 0;
+        _curBuf -> putch('>');
+        _curBuf -> putch(ch);                       //yes, put the character into the buffer
+        _lost = 0;
     }
     else {
-        ++lost;                                     //no, this character was lost
+        ++_lost;                                    //no, this character was lost
         ret = -1;                                   //still have overrun situation
     }
     return ret;
@@ -187,9 +190,9 @@ int bufferPool::putch(uint8_t ch)
 int bufferPool::write(SdFile* f)
 {
     int sdStat = 0;
-    writeBuf = &buf[writeIdx];                                //point to the buffer
-    sdStat = writeBuf -> write(f);                            //write the buffer to SD
-    if ( ++writeIdx >= NBUF ) writeIdx = 0;                   //increment index to next buffer
+    _writeBuf = &buf[_writeIdx];                              //point to the buffer
+    sdStat = _writeBuf -> write(f);                           //write the buffer to SD
+    if ( ++_writeIdx >= NBUF ) _writeIdx = 0;                 //increment index to next buffer
     return sdStat;
 }
 
@@ -198,14 +201,16 @@ int bufferPool::write(SdFile* f)
 int bufferPool::flush(SdFile* f)
 {
     int sdStat = 0;
-    writeIdx = ++bufIdx;                                          //index to oldest buffer
-    if ( writeIdx >= NBUF ) writeIdx = 0;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        _writeIdx = ++_bufIdx;                          //index to oldest buffer
+    }
+    if ( _writeIdx >= NBUF ) _writeIdx = 0;
 
     for (uint8_t i = 0; i < NBUF; i++ ) {
-        writeBuf = &buf[writeIdx];                                //point to the buffer
-        sdStat = writeBuf -> flush(f);                            //write the buffer to SD
+        _writeBuf = &buf[_writeIdx];                              //point to the buffer
+        sdStat = _writeBuf -> flush(f);                           //write the buffer to SD
         if (sdStat < 0) break;
-        if ( ++writeIdx >= NBUF ) writeIdx = 0;                   //increment index to next buffer
+        if ( ++_writeIdx >= NBUF ) _writeIdx = 0;                 //increment index to next buffer
     }
     return sdStat;
 }
