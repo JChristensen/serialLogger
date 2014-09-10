@@ -28,7 +28,7 @@
  *-----------------------------------------------------------------------------*/
 
 #include <Button.h>                 //http://github.com/JChristensen/Button
-#include <SdFat.h>                  //http://code.google.com/p/sdfatlib/
+#include <SdFat.h>                  //http://github.com/greiman/SdFat
 #include <SPI.h>                    //http://arduino.cc/en/Reference/SPI
 #include "buffer.h"
 #include "heartbeat.h"

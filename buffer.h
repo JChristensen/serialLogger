@@ -68,8 +68,9 @@ int buffer::putch(uint8_t ch)
         return ch;
     }
 }
-//write the buffer if it's full (i.e. if writeMe is set),
-//passes the return code from SdFile.write() back to the caller.
+//write the buffer if it's full (i.e. if writeMe is set).
+//passes the return code from SdFile.write() back to the caller (-1 for error, else number of bytes written).
+//if the sync fails, return code -2 is given.
 int buffer::write(SdFile* f)
 {
     int sdStat = 0;
@@ -78,14 +79,16 @@ int buffer::write(SdFile* f)
         writeMe = false;
         *_ledReg |= _ledMask;
         sdStat = f -> write((const uint8_t *)buf, nchar);        //write the buffer to SD
+        if ( !(f -> sync()) ) sdStat = -2;
         *_ledReg &= ~_ledMask;
         if (sdStat >= 0) nchar = 0;             //the buffer is empty/available again
     }
     return sdStat;
 }
 
-//write the buffer if it contains data
-//passes the return code from SdFile.write() back to the caller.
+//write the buffer if it contains data.
+//passes the return code from SdFile.write() back to the caller (-1 for error, else number of bytes written).
+//if the sync fails, return code -2 is given.
 int buffer::flush(SdFile* f)
 {
     int sdStat = 0;
@@ -94,6 +97,7 @@ int buffer::flush(SdFile* f)
         writeMe = false;
         *_ledReg |= _ledMask;
         sdStat = f -> write((const uint8_t *)buf, nchar);        //write the buffer to SD
+        if ( !(f -> sync()) ) sdStat = -2;
         *_ledReg &= ~_ledMask;
         if (sdStat >= 0) nchar = 0;             //the buffer is empty/available again
     }
