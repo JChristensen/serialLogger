@@ -1,15 +1,13 @@
 /*-----------------------------------------------------------------------------*
- * Serial Data Logger for Arduino Uno and Adafruit MicroSD card breakout       *
- * board (product #254).                                                       *
+ * Serial Data Logger by Jack Christensen                                      *
+ *                                                                             *
+ * 02Jul2014 v1 for Arduino Uno and Adafruit MicroSD card breakout             *
+ *              board (product #254).                                          *
+ * 05Nov2014 v2 for custom PC board.                                           *
  *                                                                             *
  * A logger that writes all serial data input on digital pin 0 (RXD) to        *
  * a micro SD card. Serial input is interrupt-driven and double-buffered       *
- * for maximum throughput.                                                     *
- *                                                                             *
- * Input baud rate is selected by grounding pins A5:A2 according to the        *
- * codes below. Leaving a pin open is a one (high), grounding a pin is         *
- * a zero (low). E.g. for 115200 ground A4 and A3, for 57600 ground A4,        *
- * A3 and A2, for 9600 ground A5 and A4.                                       *
+ * for maximum throughput. Input baud rate is selected by a rotary switch.     *
  *                                                                             *
  * The heartbeat LED blinks in various patterns:                               *
  *   Short blink: Idle mode.                                                   *
@@ -33,19 +31,20 @@
 #include "buffer.h"
 #include "heartbeat.h"
 
-//BAUD RATE CODES (A5:A2)      0     1     2     3     4      5      6      7      8      9
+//BAUD RATE CODES (A3:A0)      0     1     2     3     4      5      6      7      8      9
 const uint32_t baudRates[] = { 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200 };
 
 //pin assignments
-const uint8_t SD_LED = 5;            //SD activity LED
-const uint8_t HB_LED = 6;            //heartbeat LED
-const uint8_t OVR_LED = 7;           //buffer overrun LED
-const uint8_t BUTTON_PIN = 8;        //start/stop button
+const uint8_t BUTTON_PIN = 5;        //start/stop button
+const uint8_t OVR_LED = 6;           //buffer overrun LED
+const uint8_t SD_LED = 7;            //SD activity LED
+const uint8_t HB_LED = 8;            //heartbeat LED
 const uint8_t CARD_DETECT = 9;
-const uint8_t BAUD_RATE_0 = A2;
-const uint8_t BAUD_RATE_1 = A3;
-const uint8_t BAUD_RATE_2 = A4;
-const uint8_t BAUD_RATE_3 = A5;
+const uint8_t BAUD_RATE_1 = A0;
+const uint8_t BAUD_RATE_2 = A1;
+const uint8_t BAUD_RATE_4 = A2;
+const uint8_t BAUD_RATE_8 = A3;
+const uint8_t UNUSED_PINS[] = { 2, 3, 4, A4, A5 };
 
 bufferPool bp(SD_LED);
 SdFat sd;
@@ -56,22 +55,25 @@ const bool PULLUP = true;
 const bool INVERT = true;
 const unsigned long DEBOUNCE_MS = 25;
 Button btn(BUTTON_PIN, PULLUP, INVERT, DEBOUNCE_MS);
+Button cardDetect(CARD_DETECT, PULLUP, INVERT, DEBOUNCE_MS);
 
-enum STATES_t { IDLE, LOGGING, STOP, ERROR } STATE;
+enum STATES_t { IDLE, LOGGING, STOP, NO_CARD, ERROR } STATE;
 
 void setup(void)
 {
     //inits
     pinMode(OVR_LED, OUTPUT);
-    pinMode(CARD_DETECT, INPUT_PULLUP);
-    pinMode(BAUD_RATE_0, INPUT_PULLUP);
     pinMode(BAUD_RATE_1, INPUT_PULLUP);
     pinMode(BAUD_RATE_2, INPUT_PULLUP);
-    pinMode(BAUD_RATE_3, INPUT_PULLUP);
+    pinMode(BAUD_RATE_4, INPUT_PULLUP);
+    pinMode(BAUD_RATE_8, INPUT_PULLUP);
+    //turn pullups on for unused pins for noise immunity
+    for (uint8_t i = 0; i < sizeof(UNUSED_PINS) / sizeof(UNUSED_PINS[0]); i++) pinMode(i, INPUT_PULLUP);
     hbLED.begin(BLINK_IDLE);
 
-    if ( digitalRead(CARD_DETECT) ) {
-        STATE = ERROR;
+    cardDetect.read();
+    if ( cardDetect.isReleased() ) {
+        STATE = NO_CARD;
         hbLED.mode(BLINK_NO_CARD);
     }
     else if ( !sd.begin(SS, SPI_FULL_SPEED) ) {    //initialize SD card
@@ -80,7 +82,7 @@ void setup(void)
     }
 
     //get the baud rate
-    uint8_t baudIdx = ( PINC >> 2 ) & 0x0F;
+    uint8_t baudIdx = ~PINC & 0x0F;
     uint32_t USART0_BAUDRATE = baudRates[baudIdx];
 
     //set up USART0
@@ -104,7 +106,11 @@ void loop(void)
     int sdStat;
 
     case IDLE:
-        if (btn.wasReleased()) {
+        if ( cardDetect.isReleased() ) {        //released == no card detected
+            STATE = NO_CARD;
+            hbLED.mode(BLINK_NO_CARD);
+        }
+        if ( btn.wasReleased() ) {
             if ( !openFile() ) {
                 STATE = ERROR;
                 hbLED.mode(BLINK_ERROR);
@@ -119,7 +125,11 @@ void loop(void)
         break;
 
     case LOGGING:
-        if (btn.wasReleased()) {                  //user wants to stop
+        if ( cardDetect.isReleased() ) {        //released == no card detected
+            STATE = NO_CARD;
+            hbLED.mode(BLINK_NO_CARD);
+        }
+        if ( btn.wasReleased() ) {                //user wants to stop
             UCSR0B = _BV(TXEN0);                  //disable usart rx & rx complete interrupt, enable tx
             STATE = STOP;
         }
@@ -147,12 +157,26 @@ void loop(void)
         digitalWrite(OVR_LED, LOW);
         break;
 
-    case ERROR:                                   //All hope abandon, ye who enter here
+    case NO_CARD:
+        if ( cardDetect.isPressed() ) {
+            if ( !sd.begin(SS, SPI_FULL_SPEED) ) {    //initialize SD card
+                STATE = ERROR;
+                hbLED.mode(BLINK_ERROR);
+            }
+            else {
+                STATE = IDLE;
+                hbLED.mode(BLINK_IDLE);
+            }
+        }
+        break;
+
+    case ERROR:                                   //All hope abandon, ye who enter here (reset required)
         break;
 
     }
 
     btn.read();
+    cardDetect.read();
     hbLED.run();
 }
 
