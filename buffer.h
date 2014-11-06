@@ -171,6 +171,8 @@ int bufferPool::putch(uint8_t ch)
         _curBuf -> putch('S');
         _curBuf -> putch('T');
         _curBuf -> putch(' ');
+        _curBuf -> putch('0');
+        _curBuf -> putch('x');
         for (uint8_t i = 0; i < 4; i++) {           //convert count of lost chars to hex
             uint16_t n = ( _lost & 0xF000 ) >> 12;
             n = n + ( (n > 9) ? 'A' - 10 : '0' );

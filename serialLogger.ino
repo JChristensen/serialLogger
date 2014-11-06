@@ -25,6 +25,7 @@
  * http://creativecommons.org/licenses/by-sa/4.0/                              *
  *-----------------------------------------------------------------------------*/
 
+#include <avr/wdt.h>
 #include <Button.h>                 //http://github.com/JChristensen/Button
 #include <SdFat.h>                  //http://github.com/greiman/SdFat
 #include <SPI.h>                    //http://arduino.cc/en/Reference/SPI
@@ -35,11 +36,13 @@
 const uint32_t baudRates[] = { 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200 };
 
 //pin assignments
+//0, 1 USART
 const uint8_t BUTTON_PIN = 5;        //start/stop button
 const uint8_t OVR_LED = 6;           //buffer overrun LED
 const uint8_t SD_LED = 7;            //SD activity LED
 const uint8_t HB_LED = 8;            //heartbeat LED
 const uint8_t CARD_DETECT = 9;
+//10-13 SPI
 const uint8_t BAUD_RATE_1 = A0;
 const uint8_t BAUD_RATE_2 = A1;
 const uint8_t BAUD_RATE_4 = A2;
@@ -59,6 +62,16 @@ Button cardDetect(CARD_DETECT, PULLUP, INVERT, DEBOUNCE_MS);
 
 enum STATES_t { IDLE, LOGGING, STOP, NO_CARD, ERROR } STATE;
 
+//ensure the watchdog is disabled after a reset. this code does not work with a bootloader.
+void wdt_init(void) __attribute__((naked)) __attribute__((section(".init3")));
+
+void wdt_init(void)
+{
+    MCUSR = 0;        //must clear WDRF in MCUSR in order to clear WDE in WDTCSR
+    wdt_reset();
+    wdt_disable();
+}
+
 void setup(void)
 {
     //inits
@@ -67,7 +80,7 @@ void setup(void)
     pinMode(BAUD_RATE_2, INPUT_PULLUP);
     pinMode(BAUD_RATE_4, INPUT_PULLUP);
     pinMode(BAUD_RATE_8, INPUT_PULLUP);
-    //turn pullups on for unused pins for noise immunity
+    //enable pullups on unused pins for noise immunity
     for (uint8_t i = 0; i < sizeof(UNUSED_PINS) / sizeof(UNUSED_PINS[0]); i++) pinMode(i, INPUT_PULLUP);
     hbLED.begin(BLINK_IDLE);
 
@@ -106,7 +119,7 @@ void loop(void)
     int sdStat;
 
     case IDLE:
-        if ( cardDetect.isReleased() ) {        //released == no card detected
+        if ( cardDetect.wasReleased() ) {        //released == no card detected
             STATE = NO_CARD;
             hbLED.mode(BLINK_NO_CARD);
         }
@@ -125,7 +138,7 @@ void loop(void)
         break;
 
     case LOGGING:
-        if ( cardDetect.isReleased() ) {        //released == no card detected
+        if ( cardDetect.wasReleased() ) {        //released == no card detected
             STATE = NO_CARD;
             hbLED.mode(BLINK_NO_CARD);
         }
@@ -158,15 +171,9 @@ void loop(void)
         break;
 
     case NO_CARD:
-        if ( cardDetect.isPressed() ) {
-            if ( !sd.begin(SS, SPI_FULL_SPEED) ) {    //initialize SD card
-                STATE = ERROR;
-                hbLED.mode(BLINK_ERROR);
-            }
-            else {
-                STATE = IDLE;
-                hbLED.mode(BLINK_IDLE);
-            }
+        if ( cardDetect.wasPressed() ) {          //card was inserted, reset mcu for a clean start
+            wdt_enable(WDTO_15MS);
+            while (1);
         }
         break;
 
@@ -200,3 +207,4 @@ bool openFile(void)
     }
     return logFile.isOpen();
 }
+
