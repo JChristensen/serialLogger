@@ -76,12 +76,25 @@ void setup(void)
 {
     //inits
     pinMode(OVR_LED, OUTPUT);
+    pinMode(SD_LED, OUTPUT);
+    pinMode(HB_LED, OUTPUT);
     pinMode(BAUD_RATE_1, INPUT_PULLUP);
     pinMode(BAUD_RATE_2, INPUT_PULLUP);
     pinMode(BAUD_RATE_4, INPUT_PULLUP);
     pinMode(BAUD_RATE_8, INPUT_PULLUP);
+
     //enable pullups on unused pins for noise immunity
     for (uint8_t i = 0; i < sizeof(UNUSED_PINS) / sizeof(UNUSED_PINS[0]); i++) pinMode(i, INPUT_PULLUP);
+
+    //LED test
+    boolean ledState = false;
+    for (uint8_t i = 0; i < 4; i++) {
+        digitalWrite(OVR_LED, ledState = !ledState);
+        digitalWrite(SD_LED, ledState);
+        digitalWrite(HB_LED, ledState);
+        delay(100);
+    }
+
     hbLED.begin(BLINK_IDLE);
 
     cardDetect.read();
