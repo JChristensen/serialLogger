@@ -26,9 +26,9 @@
  *-----------------------------------------------------------------------------*/
 
 #include <avr/wdt.h>
-#include <Button.h>                 //http://github.com/JChristensen/Button
-#include <SdFat.h>                  //http://github.com/greiman/SdFat
-#include <SPI.h>                    //http://arduino.cc/en/Reference/SPI
+#include <JC_Button.h>              // https://github.com/JChristensen/JC_Button
+#include <SdFat.h>                  // https://github.com/greiman/SdFat
+#include <SPI.h>                    // https://arduino.cc/en/Reference/SPI
 #include "buffer.h"
 #include "heartbeat.h"
 
@@ -54,11 +54,9 @@ SdFat sd;
 SdFile logFile;
 heartbeat hbLED(HB_LED);
 
-const bool PULLUP = true;
-const bool INVERT = true;
-const unsigned long DEBOUNCE_MS = 25;
-Button btn(BUTTON_PIN, PULLUP, INVERT, DEBOUNCE_MS);
-Button cardDetect(CARD_DETECT, PULLUP, INVERT, DEBOUNCE_MS);
+Button
+    btn(BUTTON_PIN),
+    cardDetect(CARD_DETECT);
 
 enum STATES_t { IDLE, LOGGING, STOP, NO_CARD, ERROR } STATE;
 
@@ -82,6 +80,8 @@ void setup(void)
     pinMode(BAUD_RATE_2, INPUT_PULLUP);
     pinMode(BAUD_RATE_4, INPUT_PULLUP);
     pinMode(BAUD_RATE_8, INPUT_PULLUP);
+    btn.begin();
+    cardDetect.begin();
 
     //enable pullups on unused pins for noise immunity
     for (uint8_t i = 0; i < sizeof(UNUSED_PINS) / sizeof(UNUSED_PINS[0]); i++) pinMode(i, INPUT_PULLUP);
