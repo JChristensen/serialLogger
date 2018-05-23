@@ -1,55 +1,58 @@
-//Serial Data Logger by Jack Christensen is licensed under CC BY-SA 4.0,
-//http://creativecommons.org/licenses/by-sa/4.0/
+// Serial Data Logger by Jack Christensen is licensed under CC BY-SA 4.0,
+// http://creativecommons.org/licenses/by-sa/4.0/
 
-//heartbeat LED with various blink modes
+// heartbeat LED with various blink modes
 
-enum blinkMode_t { BLINK_IDLE, BLINK_RUN, BLINK_ERROR, BLINK_NO_CARD };
+enum blinkMode_t {BLINK_IDLE, BLINK_RUN, BLINK_ERROR, BLINK_NO_CARD};
 
 class heartbeat
 {
     public:
         heartbeat(uint8_t pin);
         void begin(blinkMode_t m);
-        void run(void);
+        void run();
         void mode(blinkMode_t m);
 
     private:
-        uint8_t _pin;
-        uint8_t _ledMask;
-        volatile uint8_t* _ledReg;
-        uint32_t _msOn;
-        uint32_t _msOff;
-        uint32_t _interval;
-        bool _state;
-        uint32_t _msLastChange;
+        uint8_t m_pin;
+        uint8_t m_ledMask;
+        volatile uint8_t* m_ledReg;
+        uint32_t m_msOn;
+        uint32_t m_msOff;
+        uint32_t m_interval;
+        bool m_state;
+        uint32_t m_msLastChange;
 };
 
-//constructor
+// constructor
 heartbeat::heartbeat(uint8_t pin)
 {
-    _pin = pin;
-    _ledMask = digitalPinToBitMask(_pin);    //save some cycles
-    uint8_t port = digitalPinToPort(_pin);
-    _ledReg = portOutputRegister(port);
+    m_pin = pin;
+    m_ledMask = digitalPinToBitMask(m_pin);     // save some cycles
+    uint8_t port = digitalPinToPort(m_pin);
+    m_ledReg = portOutputRegister(port);
 }
 
-//hardware init
+// hardware init
 void heartbeat::begin(blinkMode_t m)
 {
-    pinMode(_pin, OUTPUT);
-    _state = false;
-    *_ledReg &= ~_ledMask;
+    pinMode(m_pin, OUTPUT);
+    m_state = false;
+    *m_ledReg &= ~m_ledMask;
     mode(m);
 }
 
 void heartbeat::run()
 {
     uint32_t ms = millis();
-    if ( ms - _msLastChange >= _interval ) {
-        _msLastChange = ms;
-        if ( (_state = !_state) ) *_ledReg |= _ledMask;
-        else *_ledReg &= ~_ledMask;
-        _interval = _state ? _msOn : _msOff;
+    if ( ms - m_msLastChange >= m_interval )
+    {
+        m_msLastChange = ms;
+        if ( (m_state = !m_state) )
+            *m_ledReg |= m_ledMask;
+        else
+            *m_ledReg &= ~m_ledMask;
+        m_interval = m_state ? m_msOn : m_msOff;
     }
 }
 
@@ -57,27 +60,28 @@ void heartbeat::mode(blinkMode_t m)
 {
     switch (m)
     {
-    case BLINK_IDLE:
-        _msOn = 50;
-        _msOff = 950;
-        break;
+        case BLINK_IDLE:
+            m_msOn = 50;
+            m_msOff = 950;
+            break;
 
-    case BLINK_RUN:
-        _msOn = 500;
-        _msOff = 500;
-        break;
+        case BLINK_RUN:
+            m_msOn = 500;
+            m_msOff = 500;
+            break;
 
-    case BLINK_ERROR:
-        _msOn = 100;
-        _msOff = 100;
-        break;
+        case BLINK_ERROR:
+            m_msOn = 100;
+            m_msOff = 100;
+            break;
 
-    case BLINK_NO_CARD:
-        _msOn = 2000;
-        _msOff = 2000;
-        break;
+        case BLINK_NO_CARD:
+            m_msOn = 2000;
+            m_msOff = 2000;
+            break;
     }
-    _state = false;
-    _msLastChange = 0;
+    m_state = false;
+    m_msLastChange = 0;
     run();
 }
+
