@@ -3,8 +3,8 @@
 
 #include <util/atomic.h>
 
-const int NBUF = 2;                     //number of receive buffers
-const uint16_t BUFSIZE = 512;           //serial receive buffer size
+const int NBUF(2);                      //number of receive buffers
+const uint16_t BUFSIZE(512);            //serial receive buffer size
 
 /*-------- buffer class --------*/
 class buffer

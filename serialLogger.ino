@@ -26,14 +26,14 @@
  *-----------------------------------------------------------------------------*/
 
 #include <avr/wdt.h>
-#include <JC_Button.h>              // https://github.com/JChristensen/JC_Button
-#include <SdFat.h>                  // https://github.com/greiman/SdFat
-#include <SPI.h>                    // https://arduino.cc/en/Reference/SPI
+#include <JC_Button.h>          // https://github.com/JChristensen/JC_Button
+#include <SdFat.h>              // https://github.com/greiman/SdFat
+#include <SPI.h>                // https://arduino.cc/en/Reference/SPI
 #include "buffer.h"
 #include "heartbeat.h"
 
-//BAUD RATE CODES (A3:A0)      0     1     2     3     4      5      6      7      8      9
-const uint32_t baudRates[] = { 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200 };
+//BAUD RATE CODES (A3:A0)     0     1     2     3     4      5      6      7      8      9
+const uint32_t baudRates[] = {1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200};
 
 //pin assignments
 //0, 1 USART
@@ -58,19 +58,20 @@ Button
     btn(BUTTON_PIN),
     cardDetect(CARD_DETECT);
 
-enum STATES_t { IDLE, LOGGING, STOP, NO_CARD, ERROR } STATE;
+enum STATES_t {LOG_IDLE, LOG_RUNNING, LOG_STOP, LOG_NO_CARD, LOG_ERROR};
+STATES_t STATE;
 
 //ensure the watchdog is disabled after a reset. this code does not work with a bootloader.
-void wdt_init(void) __attribute__((naked)) __attribute__((section(".init3")));
+void wdt_init() __attribute__((naked)) __attribute__((used)) __attribute__((section(".init3")));
 
-void wdt_init(void)
+void wdt_init()
 {
     MCUSR = 0;        //must clear WDRF in MCUSR in order to clear WDE in WDTCSR
     wdt_reset();
     wdt_disable();
 }
 
-void setup(void)
+void setup()
 {
     //inits
     pinMode(OVR_LED, OUTPUT);
@@ -99,11 +100,11 @@ void setup(void)
 
     cardDetect.read();
     if ( cardDetect.isReleased() ) {
-        STATE = NO_CARD;
+        STATE = LOG_NO_CARD;
         hbLED.mode(BLINK_NO_CARD);
     }
     else if ( !sd.begin(SS, SPI_FULL_SPEED) ) {    //initialize SD card
-        STATE = ERROR;
+        STATE = LOG_ERROR;
         hbLED.mode(BLINK_ERROR);
     }
 
@@ -125,24 +126,24 @@ void setup(void)
     UBRR0 = UBRR0_VALUE;                   //baud rate setting
 }
 
-void loop(void)
+void loop()
 {
     switch (STATE)
     {
     int sdStat;
 
-    case IDLE:
+    case LOG_IDLE:
         if ( cardDetect.wasReleased() ) {        //released == no card detected
-            STATE = NO_CARD;
+            STATE = LOG_NO_CARD;
             hbLED.mode(BLINK_NO_CARD);
         }
         if ( btn.wasReleased() ) {
             if ( !openFile() ) {
-                STATE = ERROR;
+                STATE = LOG_ERROR;
                 hbLED.mode(BLINK_ERROR);
             }
             else {
-                STATE = LOGGING;
+                STATE = LOG_RUNNING;
                 hbLED.mode(BLINK_RUN);
                 bp.init();                      //initialize the buffer pool
                 UCSR0B = _BV(RXCIE0) | _BV(RXEN0) | _BV(TXEN0);    //enable rx, tx & rx complete interrupt
@@ -150,49 +151,48 @@ void loop(void)
         }
         break;
 
-    case LOGGING:
+    case LOG_RUNNING:
         if ( cardDetect.wasReleased() ) {        //released == no card detected
-            STATE = NO_CARD;
+            STATE = LOG_NO_CARD;
             hbLED.mode(BLINK_NO_CARD);
         }
         if ( btn.wasReleased() ) {                //user wants to stop
             UCSR0B = _BV(TXEN0);                  //disable usart rx & rx complete interrupt, enable tx
-            STATE = STOP;
+            STATE = LOG_STOP;
         }
         else {                                    //watch for buffers that need to be written
             sdStat = bp.write(&logFile);          //write buffers if needed
             if (sdStat < 0) {
                 logFile.close();
-                STATE = ERROR;                    //SD error
+                STATE = LOG_ERROR;                //SD error
                 hbLED.mode(BLINK_ERROR);
             }
             if (bp.overrun) digitalWrite(OVR_LED, HIGH);
         }
         break;
 
-    case STOP:                                    //stop logging, flush buffers, etc.
-        STATE = IDLE;
+    case LOG_STOP:                                //stop logging, flush buffers, etc.
+        STATE = LOG_IDLE;
         hbLED.mode(BLINK_IDLE);
         sdStat = bp.flush(&logFile);              //flush buffers if needed
         logFile.close();
         if (sdStat < 0) {
-            STATE = ERROR;                        //SD error
+            STATE = LOG_ERROR;                    //SD error
             hbLED.mode(BLINK_ERROR);
         }
         bp.init();
         digitalWrite(OVR_LED, LOW);
         break;
 
-    case NO_CARD:
+    case LOG_NO_CARD:
         if ( cardDetect.wasPressed() ) {          //card was inserted, reset mcu for a clean start
             wdt_enable(WDTO_15MS);
             while (1);
         }
         break;
 
-    case ERROR:                                   //All hope abandon, ye who enter here (reset required)
+    case LOG_ERROR:                               //All hope abandon, ye who enter here (reset required)
         break;
-
     }
 
     btn.read();
@@ -208,7 +208,7 @@ ISR(USART_RX_vect)
 }
 
 //create a new file and open for write. return true if successful, else false.
-bool openFile(void)
+bool openFile()
 {
     char filename[] = "LOGnnn.TXT";
 
