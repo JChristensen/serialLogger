@@ -1,5 +1,7 @@
-// Serial Data Logger by Jack Christensen is licensed under CC BY-SA 4.0,
-// http://creativecommons.org/licenses/by-sa/4.0/
+// Serial Data Logger
+// https://github.com/JChristensen/serialLogger
+// Copyright (C) 2018 by Jack Christensen and licensed under
+// GNU GPL v3.0, https://www.gnu.org/licenses/gpl.html
 
 // heartbeat LED with various blink modes
 

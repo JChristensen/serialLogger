@@ -1,5 +1,7 @@
-// Serial Data Logger by Jack Christensen is licensed under CC BY-SA 4.0,
-// http://creativecommons.org/licenses/by-sa/4.0/
+// Serial Data Logger
+// https://github.com/JChristensen/serialLogger
+// Copyright (C) 2018 by Jack Christensen and licensed under
+// GNU GPL v3.0, https://www.gnu.org/licenses/gpl.html
 
 #include <util/atomic.h>
 
@@ -10,7 +12,7 @@ const uint16_t BUFSIZE(512);            // serial receive buffer size
 class buffer
 {
     public:
-        buffer();
+        buffer() {}
         void init(int8_t writeLED = -1);
         int putch(uint8_t ch);
         int write(SdFile* f);
@@ -30,12 +32,6 @@ class buffer
 int8_t buffer::m_writeLED;
 uint8_t buffer::m_ledMask;
 volatile uint8_t* buffer::m_ledReg;
-
-// constructor
-buffer::buffer()
-{
-    init();
-}
 
 // initialize the buffer
 void buffer::init(int8_t writeLED)
@@ -114,7 +110,7 @@ int buffer::flush(SdFile* f)
 class bufferPool
 {
     public:
-        bufferPool(int8_t writeLED = -1);
+        bufferPool(int8_t writeLED = -1) : m_writeLED(writeLED) {}
         void init();
         int putch(uint8_t ch);
         int write(SdFile* f);
@@ -131,12 +127,6 @@ class bufferPool
         int8_t m_writeLED;
         uint16_t m_lost;
 };
-
-// constructor
-bufferPool::bufferPool(int8_t writeLED)
-{
-    m_writeLED = writeLED;
-}
 
 void bufferPool::init()
 {

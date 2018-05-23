@@ -1,29 +1,23 @@
-/*------------------------------------------------------------------------------*
- *  Serial Data Logger by Jack Christensen                                      *
- *                                                                              *
- * 02Jul2014 v1 for Arduino Uno and Adafruit MicroSD card breakout              *
- *              board (product #254).                                           *
- * 05Nov2014 v2 for custom PC board.                                            *
- *                                                                              *
- *  A logger that writes all serial data input on digital pin 0 (RXD) to        *
- *  a micro SD card. Serial input is interrupt-driven and double-buffered       *
- *  for maximum throughput. Input baud rate is selected by a rotary switch.     *
- *                                                                              *
- *  The heartbeat LED blinks in various patterns:                               *
- *   Short blink: Idle mode.                                                    *
- *   Steady blink on/off: Logging.                                              *
- *   Fast blink on/off: Error.                                                  *
- *   Slow on/off: No SD card inserted (Reset the MCU after inserting card).     *
- *                                                                              *
- *  Press the button to start or stop logging. Each time logging is started,    *
- *  a new file is created.                                                      *
- *                                                                              *
- *  If a buffer overrun occurs, the overrun LED stays on until logging is       *
- *  stopped or the MCU is reset.                                                *
- *                                                                              *
- *  Serial Data Logger by Jack Christensen is licensed under CC BY-SA 4.0,      *
- *  http://creativecommons.org/licenses/by-sa/4.0/                              *
- *------------------------------------------------------------------------------*/
+// Serial Data Logger
+// https://github.com/JChristensen/serialLogger
+// Copyright (C) 2018 by Jack Christensen and licensed under
+// GNU GPL v3.0, https://www.gnu.org/licenses/gpl.html
+//
+// A logger that writes all serial data input on digital pin 0 (RXD) to
+// a micro SD card. Serial input is interrupt-driven and double-buffered
+// for maximum throughput. Input baud rate is selected by a rotary switch.
+//
+// The heartbeat LED blinks in various patterns:
+//  Short blink: Idle mode.
+//  Steady blink on/off: Logging.
+//  Fast blink on/off: Error.
+//  Slow on/off: No SD card inserted.
+//
+// Press the button to start or stop logging. Each time logging is started,
+// a new file is created.
+//
+// If a buffer overrun occurs, the overrun LED stays on until logging is
+// stopped or the MCU is reset.
 
 #include <avr/wdt.h>
 #include <JC_Button.h>          // https://github.com/JChristensen/JC_Button
